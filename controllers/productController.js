@@ -57,7 +57,7 @@ exports.addProduct = async (req, res) => {
         },
       });
 
-      const productUrl = `http://localhost:5173/products/${product._id}`; // ⚠️ Replace with your actual frontend URL
+      const productUrl = `https://ai-ecommerce-4a2c6.web.app/${product._id}`; // ⚠️ Replace with your actual frontend URL
 
      for (const s of subscribers) {
   const mailOptions = {
@@ -70,14 +70,14 @@ exports.addProduct = async (req, res) => {
         <p><strong>Brand:</strong> ${brand}</p>
         <p>${description}</p>
         <p><strong>Price:</strong> $${price}</p>
-        <a href="http://localhost:5173/products/${product._id}" 
+        <a href="https://ai-ecommerce-4a2c6.web.app/products/${product._id}" 
           style="display:inline-block; padding:10px 20px; background:#007bff; color:#fff; text-decoration:none; border-radius:5px;">
           View Product
         </a>
         <br><br>
        <small>
   You’re receiving this email because you subscribed to our product updates.<br>
-  <a href="http://localhost:5000/api/unsubscribe/${s.unsubscribeToken}" 
+  <a href="https://ai-ecommerce-4a2c6.web.app/api/unsubscribe/${s.unsubscribeToken}" 
      style="color:#dc3545;text-decoration:none;">
      Unsubscribe
   </a> anytime.

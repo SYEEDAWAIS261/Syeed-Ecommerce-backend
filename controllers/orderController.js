@@ -92,7 +92,7 @@ exports.createOrder = async (req, res) => {
         </p>
 
         <!-- Track Order Button -->
-        <a href="http://localhost:5173/orders"
+        <a href="https://ai-ecommerce-4a2c6.web.app/orders"
           style="display:inline-block; margin-top:15px; padding:10px 18px; 
           background:#2b6cb0; color:white; text-decoration:none; 
           border-radius:6px; font-size:14px;">
