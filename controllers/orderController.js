@@ -57,25 +57,80 @@ exports.createOrder = async (req, res) => {
         ).join("");
 
         const emailContent = `
-          <div style="font-family: 'Segoe UI', Arial, sans-serif; background:#f4f4f7; padding:30px;">
-            <div style="max-width:650px; margin:0 auto; background:#ffffff; padding:30px; border-radius:10px; box-shadow:0 4px 15px rgba(0,0,0,0.08);">
-              <div style="text-align:center; margin-bottom:25px;">
-                <h1 style="color:#2d3748; margin:0;">🛍️ Thank You for Your Order!</h1>
-              </div>
-              <p>Hi <strong>${user.name || "Customer"}</strong>,</p>
-              <div style="background:#f9fafb; padding:20px; border-radius:8px; margin-top:20px;">
-                <h3 style="color:#2d3748; margin:0 0 10px 0;">📦 Order Summary</h3>
-                <p><strong>Total:</strong> $${total.toFixed(2)}</p>
-                <p><strong>Payment Method:</strong> ${paymentMethod}</p>
-                <p><strong>Tracking ID:</strong> ${trackingId}</p>
-              </div>
-              <div style="margin-top:25px;">
-                <h3 style="color:#2d3748; margin-bottom:10px;">🛒 Items</h3>
-                <ul>${productList}</ul>
-              </div>
-            </div>
-          </div>`;
+  <div style="font-family: 'Segoe UI', Arial, sans-serif; background:#f4f4f7; padding:30px;">
+    <div style="max-width:650px; margin:0 auto; background:#ffffff; padding:30px; border-radius:10px;
+      box-shadow:0 4px 15px rgba(0,0,0,0.08);">
+      <!-- Header -->
+      <div style="text-align:center; margin-bottom:25px;">
+        <h1 style="color:#2d3748; margin:0;">🛍️ Thank You for Your Order!</h1>
+        <p style="color:#718096; font-size:14px; margin-top:8px;">
+          Your order has been successfully confirmed.
+        </p>
+      </div>
+      <!-- Greeting -->
+      <p style="font-size:15px; color:#2d3748;">
+        Hi <strong>${user.name || "Customer"}</strong>,
+      </p>
+      <p style="font-size:15px; color:#4a5568;">
+        We are processing your order and will notify you once it ships.  
+        Below is a summary of your purchase:
+      </p>
+      <!-- Order Summary -->
+      <div style="background:#f9fafb; padding:20px; border-radius:8px; margin-top:20px;">
+        <h3 style="color:#2d3748; margin:0 0 10px 0;">📦 Order Summary</h3>
+        <p style="font-size:15px; margin:6px 0; color:#4a5568;">
+          <strong>Total:</strong> $${total.toFixed(2)}
+        </p>
+        <p style="font-size:15px; margin:6px 0; color:#4a5568;">
+          <strong>Payment Method:</strong> ${paymentMethod}
+        </p>
+        <!-- Track Order Button -->
+        <a href="https://ai-ecommerce-4a2c6.web.app/orders"
+          style="display:inline-block; margin-top:15px; padding:10px 18px;
+          background:#2b6cb0; color:white; text-decoration:none;
+          border-radius:6px; font-size:14px;">
+          Track Your Order
+        </a>
+      </div>
+      <!-- Shipping Address -->
+      <div style="margin-top:25px;">
+        <h3 style="color:#2d3748; margin-bottom:10px;">🚚 Shipping Address</h3>
+        <p style="font-size:15px; color:#4a5568; line-height:1.7;">
+          ${shippingAddress?.fullName}<br/>
+          ${shippingAddress?.street}<br/>
+          ${shippingAddress?.city}, ${shippingAddress?.state || ""} ${shippingAddress?.postalCode}<br/>
+          ${shippingAddress?.country}
+        </p>
+      </div>
+      <!-- Products -->
+      <div style="margin-top:25px;">
+        <h3 style="color:#2d3748; margin-bottom:10px;">🛒 Items in Your Order</h3>
+        <ul style="font-size:15px; color:#4a5568; line-height:1.7; padding-left:20px;">
+          ${productList}
+        </ul>
+      </div>
+      <!-- Note -->
+      <p style="font-size:14px; color:#718096; margin-top:30px;">
+        <em>This is an automated generated email. Please do not reply to this email.</em>
+      </p>
+      <!-- Signature -->
+      <p style="font-size:15px; color:#2d3748; margin-top:25px;">
+        Best Regards,<br/>
+        <strong>Syeed E-commerce Team</strong>
+      </p>
+    </div>
+    <!-- Footer -->
+    <p style="text-align:center; font-size:12px; color:#a0aec0; margin-top:15px;">
+      © ${new Date().getFullYear()} Syeed E-commerce. All rights reserved.<br />
+      You are receiving this email because you made a purchase at our store.
+    </p>
+  </div>
 
+`;
+
+
+
+        // <p>Track your order anytime using the tracking ID above on our tracking page.</p>
         console.log("Attempting to send email to:", user.email);
         // Await is crucial for Vercel
         await sendEmail(user.email, "🛒 Order Confirmation", emailContent);
