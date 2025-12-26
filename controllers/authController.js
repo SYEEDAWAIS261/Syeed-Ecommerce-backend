@@ -210,7 +210,7 @@ exports.forgotPassword = async (req, res) => {
       .update(resetToken)
       .digest("hex");
 
-    user.resetPasswordExpire = Date.now() + 15 * 60 * 1000; // 15 minutes
+    user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
 
     await user.save();
 
@@ -249,7 +249,7 @@ exports.resetPassword = async (req, res) => {
 
     const user = await User.findOne({
       resetPasswordToken: hashedToken,
-      resetPasswordExpire: { $gt: Date.now() }
+      resetPasswordExpires: { $gt: Date.now() }
     });
 
     if (!user) {
@@ -261,7 +261,7 @@ exports.resetPassword = async (req, res) => {
     // 🔐 Hash new password
     user.password = await bcrypt.hash(password, 10);
     user.resetPasswordToken = undefined;
-    user.resetPasswordExpire = undefined;
+    user.resetPasswordExpires = undefined;
 
     await user.save();
 
