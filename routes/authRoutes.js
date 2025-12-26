@@ -11,7 +11,9 @@ const {
   verifyEmail,
   resendVerificationCode,
   getAllUsers,
-  toggleBlockUser
+  toggleBlockUser,
+  forgotPassword,
+  resetPassword
 } = require('../controllers/authController');
 
 const authMiddleware = require('../middleware/authMiddleware');
@@ -24,6 +26,9 @@ router.post('/signup', signup);
 router.post('/verify', verifyEmail);
 router.post('/resend', resendVerificationCode);
 router.post('/login', login);
+
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password/:token", resetPassword);
 
 // 🔒 Protected Profile Routes
 router.get('/profile', authMiddleware, getProfile);

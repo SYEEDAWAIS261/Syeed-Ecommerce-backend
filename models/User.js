@@ -34,6 +34,14 @@ const userSchema = new mongoose.Schema({
   verificationCode: String,
   verificationCodeExpires: Date,
   
+  // 🔑 Forgot password fields
+resetPasswordToken: {
+  type: String,
+},
+resetPasswordExpires: {
+  type: Date,
+},
+
   // userSchema addition
 unsubscribeStatus: {
   type: Boolean,
