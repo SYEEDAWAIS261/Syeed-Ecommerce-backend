@@ -54,11 +54,12 @@ router.post('/subscribe', async (req, res) => {
           </p>
         </div>
 
-        <div style="text-align:center; font-size:12px; color:#a0aec0; margin-top:15px;">
-          <p>© ${new Date().getFullYear()} Syeed E-commerce. All rights reserved.</p>
-          <p>You are receiving this email because you subscribed on our website.<br/>
-          <a href="#" style="color:#a0aec0; text-decoration:underline;">Unsubscribe</a></p>
-        </div>
+        // Footer section mein ye code dalein:
+<div style="text-align:center; font-size:12px; color:#a0aec0; margin-top:15px;">
+  <p>© ${new Date().getFullYear()} Syeed E-commerce. All rights reserved.</p>
+  <p>You are receiving this because you are subscribed to our newsletter.<br/>
+  <a href="${unsubscribeUrl}" style="color:#a0aec0; text-decoration:underline;">Unsubscribe</a></p>
+</div>
       </div>
     `;
 
