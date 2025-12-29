@@ -27,7 +27,7 @@ const subscriberRoutes = require('./routes/subscriberRoutes');
 const unsubscribeRoutes = require('./routes/unsubscribeRoutes');
 const couponRoutes = require('./routes/coupons');
 const reviewRoutes = require('./routes/reviewRoutes')
-const cmsRoutes = require('./routes/cmsRoutes'); // adjust path if needed
+// const cmsRoutes = require('./routes/cmsRoutes'); 
 
 require('./config/passport'); // Google strategy
 
