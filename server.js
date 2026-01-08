@@ -36,29 +36,19 @@ const app = express();
 const server = http.createServer(app);
 
 // Middleware
-// Middleware
 app.use(cors({
-  origin: function (origin, callback) {
-    const allowedOrigins = [
-      "http://localhost:5173", 
-      "http://localhost:5174", 
-      "https://ai-ecommerce-4a2c6.web.app"
-    ];
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  credentials: true,
-  allowedHeaders: ["Content-Type", "Authorization"]
+  origin: [
+    "http://localhost:5173", 
+    "http://localhost:5174", // ✅ Yeh wala port add karein jo aap use kar rahe hain
+    "https://ai-ecommerce-4a2c6.web.app",
+    process.env.FRONTEND_URL,
+    
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
 }));
-
-// OPTIONS request ko explicitly handle karein (Vercel ke liye zaroori hai)
-app.options('*', cors());
 app.use(express.json());
+app.set("trust proxy", 1);
 app.use(passport.initialize());
 
 // Serve static uploads folder

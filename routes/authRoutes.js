@@ -13,7 +13,8 @@ const {
   getAllUsers,
   toggleBlockUser,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  getUserStats,
 } = require('../controllers/authController');
 
 const authMiddleware = require('../middleware/authMiddleware');
@@ -62,6 +63,8 @@ router.put(
 // ✅ Admin-only Routes for User Management
 router.get('/all-users', admin, getAllUsers);
 router.put('/block/:id', admin, toggleBlockUser);
+// Example:
+router.get('/stats', authMiddleware, getUserStats);
 
 // 🌐 Google OAuth Routes
 router.get(

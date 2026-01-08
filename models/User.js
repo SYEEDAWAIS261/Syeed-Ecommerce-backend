@@ -51,7 +51,14 @@ unsubscribeToken: {
   type: String,
   default: null,
 },
-
+// userSchema ke andar ye add karein:
+wishlist: [
+  {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Product'
+  }
+],
+phone: { type: String, default: '' },
 
 });
 

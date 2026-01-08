@@ -7,31 +7,30 @@ const moment = require('moment');
 const path = require('path');
 const Product = require('../models/Product');
 const crypto = require('crypto'); // For unique tracking IDs
+// const Coupon = require('../models/Coupon');
 
-// ✅ Create New Order
+// ✅ Create New Order (Asynchronous Speed Optimized)
 exports.createOrder = async (req, res) => {
-  const { products, total, paymentMethod, shippingAddress } = req.body;
+  const { products, total, paymentMethod, shippingAddress, shippingMethod, shippingCost } = req.body;
 
   try {
-    // 1. Generate unique tracking ID
-    const trackingId = "ORD-" + crypto.randomBytes(4).toString("hex").toUpperCase();
+    // 1. Price Freeze Logic (Har product ki order ke waqt ki price lock karna)
+    const productsWithPrice = await Promise.all(products.map(async (item) => {
+      const product = await Product.findById(item.productId);
+      if (!product) throw new Error(`Product ${item.productId} not found`);
 
-    const order = new Order({
-      userId: req.user.id,
-      products,
-      total,
-      paymentMethod: paymentMethod || "Cash on Delivery",
-      shippingAddress,
-      status: "Placed",
-      trackingId,
-    });
+      const currentPrice = product.discountPercentage > 0 
+        ? (product.price * (1 - product.discountPercentage / 100)) 
+        : product.price;
 
-    await order.save();
+      return {
+        productId: item.productId,
+        quantity: item.quantity,
+        priceAtOrder: currentPrice
+      };
+    }));
 
-    // 2. Populate products for email details
-    const populatedOrder = await Order.findById(order._id).populate('products.productId');
-
-    // 3. Reduce stock
+    // 2. Stock Check & Reduction (Critical Step)
     for (const item of products) {
       const product = await Product.findById(item.productId);
       if (product) {
@@ -39,110 +38,119 @@ exports.createOrder = async (req, res) => {
           product.quantity -= item.quantity;
           await product.save();
         } else {
-          // Note: Agar stock khatam ho jaye toh order cancel logic yahan add ho sakta hai
           return res.status(400).json({ message: `${product.name} is out of stock` });
         }
       }
     }
 
-    // 4. Clear user's cart
+    // 3. Create Order Object (Fixed the 'total' variable bug)
+    const order = new Order({
+      userId: req.user.id,
+      products: productsWithPrice,
+      total: total, // Yahan direct 'total' use kiya hai kyunke coupon nahi hai
+      paymentMethod,
+      shippingAddress,
+      shippingMethod: shippingMethod || "Standard",
+      shippingCost: shippingCost || 0,
+      trackingId: "ORD-" + crypto.randomBytes(4).toString("hex").toUpperCase(),
+    });
+
+    // Save Order to DB
+    await order.save();
+
+    // 4. Clear User's Cart
     await Cart.deleteMany({ user: req.user.id });
 
-    // 5. Send confirmation email (Wrapped in try-catch so it doesn't break the response)
-    const user = await User.findById(req.user.id);
-    if (user?.email) {
+    // 🚀 5. SEND SUCCESS RESPONSE IMMEDIATELY
+    res.status(201).json(order);
+
+    // 🚀 6. BACKGROUND EMAIL PROCESSING (Fire and Forget)
+    const sendBackgroundEmail = async () => {
       try {
-        const productList = populatedOrder.products.map((item) => 
-          `<li>${item.productId?.name || item.productId?.brand || "Product"} × ${item.quantity}</li>`
-        ).join("");
+        const user = await User.findById(req.user.id);
+        if (!user?.email) return;
+
+        const populatedOrder = await Order.findById(order._id).populate('products.productId');
+
+        // Calculations for Email
+        const subTotalItems = populatedOrder.products.reduce((acc, item) => 
+          acc + (item.priceAtOrder * item.quantity), 0
+        );
+        const calculatedTax = subTotalItems * 0.05;
+        const totalOriginalPrice = populatedOrder.products.reduce((acc, item) => 
+          acc + ((item.productId?.price || item.priceAtOrder) * item.quantity), 0
+        );
+        const savings = totalOriginalPrice - subTotalItems;
+
+        const productList = populatedOrder.products.map((item) => {
+          const productName = item.productId?.name || item.productId?.brand || "Product";
+          const frozenPrice = item.priceAtOrder.toFixed(2);
+          const originalPrice = (item.productId?.price || item.priceAtOrder).toFixed(2);
+          const hasDiscount = (item.productId?.price || 0) > item.priceAtOrder;
+          
+          return `
+            <li style="margin-bottom: 12px; border-bottom: 1px solid #edf2f7; padding-bottom: 10px; list-style: none;">
+              <span style="font-weight: 600; color: #2d3748;">${productName}</span><br/>
+              <span style="font-size: 13px; color: #718096;">Qty: ${item.quantity}</span> — 
+              ${hasDiscount ? `<span style="text-decoration: line-through; color: #a0aec0; font-size: 12px; margin-right: 5px;">$${originalPrice}</span>` : ""}
+              <strong style="color: #198754;">$${item.priceAtOrder.toFixed(2)}</strong>
+            </li>`;
+        }).join("");
 
         const emailContent = `
-  <div style="font-family: 'Segoe UI', Arial, sans-serif; background:#f4f4f7; padding:30px;">
-    <div style="max-width:650px; margin:0 auto; background:#ffffff; padding:30px; border-radius:10px;
-      box-shadow:0 4px 15px rgba(0,0,0,0.08);">
-      <!-- Header -->
-      <div style="text-align:center; margin-bottom:25px;">
-        <h1 style="color:#2d3748; margin:0;">🛍️ Thank You for Your Order!</h1>
-        <p style="color:#718096; font-size:14px; margin-top:8px;">
-          Your order has been successfully confirmed.
-        </p>
-      </div>
-      <!-- Greeting -->
-      <p style="font-size:15px; color:#2d3748;">
-        Hi <strong>${user.name || "Customer"}</strong>,
-      </p>
-      <p style="font-size:15px; color:#4a5568;">
-        We are processing your order and will notify you once it ships.  
-        Below is a summary of your purchase:
-      </p>
-      <!-- Order Summary -->
-      <div style="background:#f9fafb; padding:20px; border-radius:8px; margin-top:20px;">
-        <h3 style="color:#2d3748; margin:0 0 10px 0;">📦 Order Summary</h3>
-        <p style="font-size:15px; margin:6px 0; color:#4a5568;">
-          <strong>Total:</strong> $${total.toFixed(2)}
-        </p>
-        <p style="font-size:15px; margin:6px 0; color:#4a5568;">
-          <strong>Payment Method:</strong> ${paymentMethod}
-        </p>
-        <!-- Track Order Button -->
-        <a href="https://ai-ecommerce-4a2c6.web.app/orders"
-          style="display:inline-block; margin-top:15px; padding:10px 18px;
-          background:#2b6cb0; color:white; text-decoration:none;
-          border-radius:6px; font-size:14px;">
-          Track Your Order
-        </a>
-      </div>
-      <!-- Shipping Address -->
-      <div style="margin-top:25px;">
-        <h3 style="color:#2d3748; margin-bottom:10px;">🚚 Shipping Address</h3>
-        <p style="font-size:15px; color:#4a5568; line-height:1.7;">
-          ${shippingAddress?.fullName}<br/>
-          ${shippingAddress?.street}<br/>
-          ${shippingAddress?.city}, ${shippingAddress?.state || ""} ${shippingAddress?.postalCode}<br/>
-          ${shippingAddress?.country}
-        </p>
-      </div>
-      <!-- Products -->
-      <div style="margin-top:25px;">
-        <h3 style="color:#2d3748; margin-bottom:10px;">🛒 Items in Your Order</h3>
-        <ul style="font-size:15px; color:#4a5568; line-height:1.7; padding-left:20px;">
-          ${productList}
-        </ul>
-      </div>
-      <!-- Note -->
-      <p style="font-size:14px; color:#718096; margin-top:30px;">
-        <em>This is an automated generated email. Please do not reply to this email.</em>
-      </p>
-      <!-- Signature -->
-      <p style="font-size:15px; color:#2d3748; margin-top:25px;">
-        Best Regards,<br/>
-        <strong>Syeed E-commerce Team</strong>
-      </p>
-    </div>
-    <!-- Footer -->
-    <p style="text-align:center; font-size:12px; color:#a0aec0; margin-top:15px;">
-      © ${new Date().getFullYear()} Syeed E-commerce. All rights reserved.<br />
-      You are receiving this email because you made a purchase at our store.
-    </p>
-  </div>
- 
-`;
+          <div style="font-family: 'Segoe UI', Arial, sans-serif; background:#f4f4f7; padding:30px;">
+            <div style="max-width:650px; margin:0 auto; background:#ffffff; padding:30px; border-radius:10px; box-shadow:0 4px 15px rgba(0,0,0,0.08);">
+              <div style="text-align:center; margin-bottom:25px;">
+                <h1 style="color:#198754; margin:0;">🎉 Congratulations!</h1>
+                <p style="color:#4a5568; font-size:16px; margin-top:8px;">
+                  You just saved <strong>$${savings.toFixed(2)}</strong> on your order!
+                </p>
+              </div>
+              <div style="text-align:center; margin-bottom:25px;">
+                <h1 style="color:#2d3748; margin:0;">🛍️ Thank You for Your Order!</h1>
+                <p style="color:#718096; font-size:14px; margin-top:8px;">Your order has been successfully confirmed.</p>
+              </div>
+              <p style="font-size:15px; color:#2d3748;">Hi <strong>${user.name || "Customer"}</strong>,</p>
+              <p style="font-size:15px; color:#4a5568;">We are processing your order and will notify you once it ships. Below is a summary of your purchase:</p>
+              <div style="background:#f9fafb; padding:20px; border-radius:8px; margin-top:20px; border: 1px solid #e2e8f0;">
+                <h3 style="color:#2d3748; margin:0 0 15px 0; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">📦 Order Summary</h3>
+                <table width="100%" style="font-size: 14px; color: #4a5568; border-collapse: collapse;">
+                  <tr><td style="padding: 5px 0;">Items Subtotal:</td><td style="text-align: right; padding: 5px 0;">$${subTotalItems.toFixed(2)}</td></tr>
+                  <tr><td style="padding: 5px 0;">VAT (5%):</td><td style="text-align: right; padding: 5px 0;">$${calculatedTax.toFixed(2)}</td></tr>
+                  <tr><td style="padding: 5px 0;">Shipping Fee:</td><td style="text-align: right; padding: 5px 0;">$${Number(shippingCost).toFixed(2)}</td></tr>
+                  <tr><td style="padding: 15px 0 5px 0; font-size: 18px; font-weight: bold; color: #2d3748; border-top: 2px solid #edf2f7;">Grand Total:</td><td style="padding: 15px 0 5px 0; font-size: 18px; font-weight: bold; color: #198754; text-align: right; border-top: 2px solid #edf2f7;">$${total.toFixed(2)}</td></tr>
+                </table>
+                <p style="font-size:13px; margin:12px 0 0 0; color:#718096;"><strong>Payment Method:</strong> ${paymentMethod}</p>
+                <div style="text-align: center; margin-top: 20px;">
+                  <a href="https://ai-ecommerce-4a2c6.web.app/orders" style="display:inline-block; padding:12px 25px; background:#198754; color:white; text-decoration:none; border-radius:6px; font-size:14px; font-weight: bold;">Track Your Order Details</a>
+                </div>
+              </div>
+              <div style="margin-top:25px;">
+                <h3 style="color:#2d3748; margin-bottom:10px;">🚚 Shipping Address</h3>
+                <p style="font-size:15px; color:#4a5568; line-height:1.7;">
+                  ${shippingAddress?.fullName}<br/>${shippingAddress?.street}<br/>
+                  ${shippingAddress?.city}, ${shippingAddress?.state || ""} ${shippingAddress?.postalCode}<br/>${shippingAddress?.country}
+                </p>
+              </div>
+              <div style="margin-top:25px;">
+                <h3 style="color:#2d3748; margin-bottom:10px;">🛒 Items in Your Order</h3>
+                <ul style="font-size:15px; color:#4a5568; line-height:1.7; padding-left:20px;">${productList}</ul>
+              </div>
+              <p style="font-size:14px; color:#718096; margin-top:30px;"><em>This is an automated generated email. Please do not reply to this email.</em></p>
+              <p style="font-size:15px; color:#2d3748; margin-top:25px;">Best Regards,<br/><strong>Syeed Tech Point Team</strong></p>
+            </div>
+            <p style="text-align:center; font-size:12px; color:#a0aec0; margin-top:15px;">© ${new Date().getFullYear()} Syeed Tech Point. All rights reserved.</p>
+          </div>`;
 
-
-
-        // <p>Track your order anytime using the tracking ID above on our tracking page.</p>
-        console.log("Attempting to send email to:", user.email);
-        // Await is crucial for Vercel
         await sendEmail(user.email, "🛒 Order Confirmation", emailContent);
-        console.log("✅ Confirmation email sent successfully");
-      } catch (emailErr) {
-        console.error("❌ Email failed but order was saved:", emailErr.message);
-        // Hum yahan return nahi kar rahe taake user ko order success dikhe
+        console.log("✅ Confirmation email sent in background");
+      } catch (err) {
+        console.error("❌ Background email processing failed:", err.message);
       }
-    }
+    };
 
-    // 6. Final Response
-    return res.status(201).json(order);
+    // Trigger background process without awaiting it
+    sendBackgroundEmail();
 
   } catch (err) {
     console.error("❌ Error creating order:", err.message);
@@ -151,7 +159,6 @@ exports.createOrder = async (req, res) => {
     }
   }
 };
-
 // ✅ Get logged-in user's orders
 exports.getUserOrders = async (req, res) => {
   try {
@@ -182,23 +189,44 @@ exports.getAllOrders = async (req, res) => {
 // ✅ Admin: Update order status
 exports.updateOrderStatus = async (req, res) => {
   try {
-    const { status } = req.body;
-    console.log("Updating status for order ID:", req.params.id);
+    const { status, comment } = req.body;
+    const orderId = req.params.id;
+    const updateData = {
+
+      status: status,
+
+      statusUpdatedAt: Date.now()
+
+    };
+
+    console.log("Updating status for order ID:", orderId);
     console.log("New Status:", status);
 
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: "Order not found" });
+    // ✅ Hal: findByIdAndUpdate use karein aur validation off kar dein
+    const updatedOrder = await Order.findByIdAndUpdate(
+      orderId,
+      { 
+        $set: { 
+          status: status, 
+          statusUpdatedAt: Date.now() 
+        } 
+      },
+      { 
+        new: true,           // Updated document wapas milega
+        runValidators: false // 👈 Yeh sab se zaroori hai, purane missing fields ka error nahi ayega
+      }
+    );
 
-    order.status = status;
-    await order.save();
+    if (!updatedOrder) {
+      return res.status(404).json({ error: "Order not found" });
+    }
 
-    res.json({ message: "Order status updated", order });
+    res.json({ message: "Order status updated", order: updatedOrder });
   } catch (err) {
-    console.error("Error in updateOrderStatus:", err.message);
+    console.error("❌ Error in updateOrderStatus:", err.message);
     res.status(500).json({ error: "Failed to update order status" });
   }
 };
-
 // ✅ New: Customer can track order progress by tracking ID
 exports.trackOrder = async (req, res) => {
   try {
@@ -210,7 +238,7 @@ exports.trackOrder = async (req, res) => {
     }
 
     // Define all steps (like IBCC)
-    const steps = ["Placed", "Processing", "Shipped", "Delivered"];
+    const steps = ["Placed", "Pending", "Processing", "Shipped", "Delivered"];
     const currentStep = steps.indexOf(order.status);
 
     res.json({
@@ -338,30 +366,56 @@ exports.downloadInvoice = async (req, res) => {
     doc.fontSize(26).font('Helvetica-Bold');
     // const logoPath = path.join(__dirname, '');
     const syeedWidth = doc.widthOfString('Syeed');
-    const ecommerceWidth = doc.widthOfString(' E-Commerce');
+    const ecommerceWidth = doc.widthOfString(' Tech Point');
     const totalWidth = syeedWidth + ecommerceWidth;
     const startX = centerX - totalWidth / 2;
     const y = 35;
 
     const logoPath = path.join(__dirname, '../public/logo.png');
 
-const logoWidth = 120;
+const logoWidth = 135;
+const logoheight = 135;
 doc.image(logoPath, (doc.page.width - logoWidth) / 2, 30, {
   width: logoWidth,
+  height: logoheight,
   align: 'center',
 });
 doc.moveDown(4);
 
-    const centerText = (text, fontSize = 12, font = 'Helvetica-Bold', color = '#000') => {
-      doc.font(font).fontSize(fontSize).fillColor(color);
-      const textWidth = doc.widthOfString(text);
-      const x = (doc.page.width - textWidth) / 2;
-      doc.text(text, x, doc.y);
-    };
+    // Function sahi hai, bas call galat ho rahi thi
+const centerText = (text, fontSize = 12, font = 'Helvetica-Bold', color = '#000') => {
+    doc.font(font).fontSize(fontSize).fillColor(color);
+    const textWidth = doc.widthOfString(text);
+    const x = (doc.page.width - textWidth) / 2;
+    doc.text(text, x, doc.y);
+};
 
-    centerText('Syeed E-Commerce Store', 18, 'Helvetica-Bold', '#1a1a1a');
-    centerText('12-B Main Street, Peshawar, Pakistan', 10, 'Helvetica', '#555');
-    centerText('Email: syeedstore.service@gmail.com | Phone: +92-334-9094849', 10, 'Helvetica', '#555');
+// ---------------- BRAND HEADER (Centered Multi-Color) ----------------
+const part1 = 'Syeed ';
+const part2 = 'Tech Point';
+
+doc.font('Helvetica-Bold').fontSize(18);
+
+// Dono parts ki total width calculate karein taake perfect center align ho sake
+const totalBrandWidth = doc.widthOfString(part1) + doc.widthOfString(part2);
+const brandX = (doc.page.width - totalBrandWidth) / 2;
+
+// Part 1: Syeed (Green Color)
+doc.fillColor('#198754') // Professional Success Green
+   .text(part1, brandX, doc.y, { continued: true });
+
+// Part 2: Tech Point (Dark Gray/Black)
+doc.fillColor('#1a1a1a')
+   .text(part2);
+
+// Baki details ke liye wapas normal function use karein
+doc.moveDown(0.2); // Thora sa gap
+
+// 1. 'UAE' ko string ke andar shamil kar dein (Extra argument remove karein)
+centerText('12-B Main Street, Al-Ain, UAE', 10, 'Helvetica', '#555');
+
+// 2. Email aur Phone wali line bilkul theek hai  
+centerText('Email: syeedstore.service@gmail.com | Phone: +92-334-9094849', 10, 'Helvetica', '#555');
 
     doc.moveDown(0.5).strokeColor('#cccccc').lineWidth(1).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
     doc.moveDown(1.2);
@@ -394,7 +448,7 @@ doc.moveDown(4);
     doc.moveDown(1.5);
 
     const tableTop = doc.y;
-    const colX = { no: 50, name: 90, qty: 300, price: 370, total: 460 };
+    const colX = { no: 50, name: 90, qty: 320, price: 390, total: 480 };
 
     doc
       .font('Helvetica-Bold')
@@ -420,8 +474,11 @@ doc.moveDown(4);
     order.products.forEach((item, index) => {
       const product = item.productId;
       const name = product?.name || product?.brand || 'Unnamed Product';
-      const price = product?.price || 0;
-      const quantity = item.quantity;
+      const price = (item.priceAtOrder && item.priceAtOrder > 0) 
+                ? item.priceAtOrder 
+                : (product?.price || 0);
+
+  const quantity = item.quantity || 1;
       const total = price * quantity;
       subTotal += total;
 
@@ -435,57 +492,85 @@ doc.moveDown(4);
         .fontSize(9.5)
         .fillColor('#000')
         .text(index + 1, colX.no, yPosition)
-        .text(name, colX.name, yPosition, { width: 190 })
+        .text(name, colX.name, yPosition, { width: 220 })
         .text(quantity.toString(), colX.qty, yPosition)
         .text(`$${price.toFixed(2)}`, colX.price, yPosition)
         .text(`$${total.toFixed(2)}`, colX.total, yPosition);
 
-      yPosition += 18;
+      yPosition += 20;
     });
 
-    const tax = subTotal * 0.1;
-    const grandTotal = subTotal + tax;
+    // --- TOTALS SECTION (FIXED OVERLAP) ---
+    const tax = subTotal * 0.05;
+    const shipping = order.shippingCost || 0;
+    const grandTotal = subTotal + tax + shipping;
 
-    doc
-      .strokeColor('#ccc')
-      .lineWidth(1)
-      .moveTo(50, yPosition + 5)
-      .lineTo(550, yPosition + 5)
-      .stroke();
+    // Line draw karein table ke baad
+    doc.strokeColor('#ccc').lineWidth(1).moveTo(50, yPosition + 5).lineTo(550, yPosition + 5).stroke();
+    
+    let currentY = yPosition + 20; // Naya variable space control karne ke liye
+    const labelX = 380; // Labels ke liye X position
+    const valueX = 480; // Amounts ke liye X position
 
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(10.5)
-      .fillColor('#000')
-      .text(`Subtotal: $${subTotal.toFixed(2)}`, colX.total - 30, yPosition + 15)
-      .text(`VAT (10%): $${tax.toFixed(2)}`, colX.total - 30, yPosition + 30)
-      .fontSize(11.5)
-      .text(`Grand Total: $${grandTotal.toFixed(2)}`, colX.total - 30, yPosition + 45);
+    doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');
 
-    doc.moveDown(2.5);
+    // Subtotal
+    doc.text('Subtotal:', labelX, currentY);
+    doc.text(`$${subTotal.toFixed(2)}`, valueX, currentY, { align: 'right', width: 70 });
 
-    doc
-      .moveDown(1.2)
-      .fontSize(10)
-      .fillColor('#000')
-      .text('Signature: ___________________________', 50, doc.y, { continued: true })
-      // .text('Date: ___________________________', 100);
+    // VAT (currentY barha rahe hain taake overlap na ho)
+    currentY += 18;
+    doc.text('VAT (5%):', labelX, currentY);
+    doc.text(`$${tax.toFixed(2)}`, valueX, currentY, { align: 'right', width: 70 });
 
-    doc
-      .moveDown(7.5)
-      .fontSize(9)
-      .fillColor('#666')
-      .text('Thank you for shopping at Syeed E-Commerce Store!', { align: 'center' })
-      .text('This is a computer-generated invoice and does not require a signature.', { align: 'center' });
+    // Shipping
+    currentY += 18;
+    doc.text('Shipping:', labelX, currentY);
+    doc.text(`$${shipping.toFixed(2)}`, valueX, currentY, { align: 'right', width: 70 });
 
-    doc.end();
+    // Grand Total (Barha gap aur green color)
+    currentY += 22;
+    doc.fontSize(12).fillColor('#198754');
+    doc.text('Grand Total:', labelX, currentY);
+    doc.text(`$${grandTotal.toFixed(2)}`, valueX, currentY, { align: 'right', width: 70 });
+
+    // --- SIGNATURE ---
+    doc.moveDown(4);
+    doc.fillColor('#000').fontSize(10).font('Helvetica');
+    doc.text('Signature: ___________________________', 50, doc.y);
+
+    // ---------------- FOOTER (CENTERED PERFECTLY) ----------------
+const footerWidth = doc.page.width - 100;
+const footerX1 = 190;
+const footerX2 = 50;
+// Signature ke baad thora gap
+const footerY = doc.y + 40;
+doc.fontSize(9).fillColor('#666');
+doc.text(
+  'Thank you for shopping at Syeed Tech Point Store!',
+  footerX1,
+  footerY,
+);
+doc.text(
+  'This is a computer-generated invoice and does not require a signature.',
+  footerX2,
+  footerY + 14,
+  {
+    width: footerWidth,
+    align: 'center',
+  }
+);
+doc.end();
+
+
+
   }catch (err) {
     console.error('❌ Invoice generation failed:', err);
     res.status(500).json({ message: 'Failed to generate invoice' });
   }
 };
 
-
+  
 // Cancel order (customer)
 exports.cancelOrder = async (req, res) => {
   try {

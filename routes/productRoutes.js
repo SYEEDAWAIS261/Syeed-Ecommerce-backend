@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { addProduct, getProducts, updateProduct, deleteProduct, getProductById, getLimitedProducts, getHighestDiscountProduct, getTopSellingProducts  } = require('../controllers/productController');
+const { addProduct, getProducts, updateProduct, deleteProduct, getProductById, getLimitedProducts, getHighestDiscountProduct, getTopSellingProducts, toggleWishlist  } = require('../controllers/productController');
 const auth = require('../middleware/authMiddleware');
 const upload = require('../middleware/upload'); // ✅ fixed path
 const admin = require('../middleware/adminMiddleware');
@@ -20,7 +20,7 @@ router.get('/', getProducts);
 router.get("/top-products", getTopSellingProducts);
 
 router.get("/highest-discount", getHighestDiscountProduct);
-
+router.post('/wishlist/toggle/:productId', auth, toggleWishlist);
 // Add this to fix the 404 error
 router.put('/:id', auth, admin, upload.array('images', 4), updateProduct);
 

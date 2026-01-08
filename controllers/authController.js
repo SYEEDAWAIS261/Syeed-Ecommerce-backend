@@ -3,6 +3,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const sendEmail = require('../utils/sendEmail');
 const crypto = require("crypto");
+const Order = require('../models/Order');
+const Wishlist = require('../models/Wishlist');
 
 // POST /signup
 exports.signup = async (req, res) => {
@@ -130,7 +132,7 @@ exports.login = async (req, res) => {
 
     // 🚫 Block check
     if (user.isBlocked) {
-      return res.status(403).json({ message: "Your account has been blocked by Syeed-Ecommerce Team." });
+      return res.status(403).json({ message: "Your account has been blocked by Syeed Tech Point Team." });
     }
 
     // 🔍 Password check (skip if Google login user)
@@ -218,7 +220,7 @@ exports.forgotPassword = async (req, res) => {
 
     await sendEmail(
       user.email,
-      "Reset Your Password - Syeed E-commerce",
+      "Reset Your Password - Syeed Tech Point",
       `
         <h3>Hello ${user.username},</h3>
         <p>You requested a password reset.</p>
@@ -373,5 +375,39 @@ exports.toggleBlockUser = async (req, res) => {
   } catch (err) {
     console.error('Error blocking/unblocking user:', err);
     res.status(500).json({ message: 'Failed to block/unblock user' });
+  }
+};
+
+exports.getUserStats = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    // 1. Wishlist Fetching
+    const wishlist = await Wishlist.findOne({ user: userId });
+    const wishlistArray = wishlist ? wishlist.products : [];
+
+    // 2. Orders Counting (Total and Active)
+    // Hum Order database se counts nikalenge
+    const totalOrders = await Order.countDocuments({ userId: userId });
+    
+    // Active orders wo hain jo abhi tak 'Delivered' ya 'Cancelled' nahi hue
+    const activeOrders = await Order.countDocuments({ 
+      userId: userId, 
+      status: { $in: ['Placed', 'Pending', 'Processing', 'Shipped'] } 
+    });
+
+    res.json({
+      wishlistCount: wishlistArray.length,
+      wishlist: wishlistArray, 
+      totalOrders: totalOrders, // Asli count database se
+      activeOrders: activeOrders // Asli active count database se
+    });
+
+  } catch (error) {
+    console.error("Stats Error:", error);
+    res.status(500).json({ 
+      message: "Error fetching stats", 
+      error: error.message 
+    }); 
   }
 };

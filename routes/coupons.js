@@ -1,51 +1,38 @@
 const express = require("express");
 const router = express.Router();
 const Coupon = require("../models/Coupon");
+// ✅ Sahi path aur file name use karein
+const adminMiddleware = require("../middleware/adminMiddleware");
 
-// @desc  Validate coupon
-// @route POST /api/coupons/validate
-router.post("/validate", async (req, res) => {
+// @desc  Create coupon (ONLY ADMIN)
+// Hum yahan 'adminMiddleware' ko use karenge jo token verify bhi karega aur isAdmin bhi check karega
+router.post("/", adminMiddleware, async (req, res) => {
   try {
-    const { code, userId } = req.body; // pass userId if you want single-use per user
-    if (!code) return res.status(400).json({ valid: false, message: "Coupon code required" });
+    const { code, discount, expiresAt, usageLimit } = req.body;
+    
+    const existing = await Coupon.findOne({ code: code.toUpperCase() });
+    if (existing) return res.status(400).json({ message: "Coupon code already exists" });
 
-    const coupon = await Coupon.findOne({ code: code.toUpperCase() });
-    if (!coupon) return res.json({ valid: false, message: "Invalid coupon code" });
-
-    // Check expiration
-    if (coupon.expiresAt && coupon.expiresAt < new Date()) {
-      return res.json({ valid: false, message: "Coupon expired" });
-    }
-
-    // Check usage limit
-    if (coupon.usageLimit && coupon.usedBy.length >= coupon.usageLimit) {
-      return res.json({ valid: false, message: "Coupon usage limit reached" });
-    }
-
-    // Check if user already used it
-    if (userId && coupon.usedBy.includes(userId)) {
-      return res.json({ valid: false, message: "Coupon already used by this user" });
-    }
-
-    // Coupon is valid
-    res.json({ valid: true, discount: coupon.discount });
+    const coupon = await Coupon.create({ 
+      code: code.toUpperCase(), 
+      discount, 
+      expiresAt, 
+      usageLimit 
+    });
+    res.status(201).json(coupon);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ valid: false, message: "Server error" });
+    res.status(500).json({ message: "Failed to create coupon" });
   }
 });
 
-// @desc  Create coupon (admin only)
-// @route POST /api/coupons
-router.post("/", async (req, res) => {
-  try {
-    const { code, discount, expiresAt, usageLimit } = req.body;
-    const coupon = await Coupon.create({ code, discount, expiresAt, usageLimit });
-    res.status(201).json(coupon);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to create coupon" });
-  }
+// @desc Get all coupons for Admin
+router.get("/", adminMiddleware, async (req, res) => {
+    try {
+        const coupons = await Coupon.find().sort({ createdAt: -1 });
+        res.json(coupons);
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
 });
 
 module.exports = router;

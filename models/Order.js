@@ -6,18 +6,38 @@ const orderSchema = new mongoose.Schema({
     {
       productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
       quantity: { type: Number, required: true },
+      priceAtOrder: { type: Number, required: true },
     },
   ],
   total: { type: Number, required: true },
+  
+  // SHIPPING DETAILS
+  shippingMethod: { type: String, default: 'Standard' }, 
+  shippingCost: { type: Number, default: 0 },
   paymentMethod: { type: String, default: 'Cash on Delivery' },
   trackingId: { type: String, unique: true, index: true },
+  
   status: {
     type: String,
     enum: ['Placed', 'Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'],
     default: 'Placed',
   },
+
+  // Status History (Great for tracking progress)
+  statusHistory: [
+    {
+      status: String,
+      timestamp: { type: Date, default: Date.now },
+      comment: String 
+    }
+  ],
+
+  // Important Timestamps
+  deliveredAt: { type: Date },
   cancelledAt: { type: Date },
-  statusUpdatedAt: { type: Date, default: Date.now }, // 🆕 Add this line
+  statusUpdatedAt: { type: Date, default: Date.now }, 
+  createdAt: { type: Date, default: Date.now },
+
   shippingAddress: {
     fullName: { type: String, required: true },
     phone: { type: String, required: true },
@@ -27,12 +47,12 @@ const orderSchema = new mongoose.Schema({
     postalCode: { type: String, required: true },
     country: { type: String, required: true },
   },
-  createdAt: { type: Date, default: Date.now },
-  hiddenForUser: {
-  type: Boolean,
-  default: false,
-},
 
+  // Soft delete for users
+  hiddenForUser: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 module.exports = mongoose.model('Order', orderSchema);

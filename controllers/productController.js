@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const nodemailer = require('nodemailer');
 const Order = require("../models/Order");
+const Wishlist = require('../models/Wishlist');
 // ✅ ADD NEW PRODUCT & NOTIFY SUBSCRIBERS
 exports.addProduct = async (req, res) => {
   try {
@@ -60,7 +61,7 @@ exports.addProduct = async (req, res) => {
       // Humne yahan 'await' loop ke bahar lagaya hai taake emails background mein chali jayein
       const emailPromises = subscribers.map((s) => {
         const mailOptions = {
-          from: `"Syeed E-commerce" <${process.env.SMTP_EMAIL}>`,
+          from: `"Syeed Tech Point" <${process.env.SMTP_EMAIL}>`,
           to: s.email,
           subject: `🆕 New Product Alert: ${product.name}`,
           html: `
@@ -274,6 +275,42 @@ exports.getHighestDiscountProduct = async (req, res) => {
   } catch (error) {
     console.error("Error fetching highest discount product:", error);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ✅ TOGGLE WISHLIST (Add/Remove)
+exports.toggleWishlist = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const userId = req.user._id; // Auth middleware se user milega
+
+    let wishlist = await Wishlist.findOne({ user: userId });
+
+    if (!wishlist) {
+      // Agar user ki wishlist exist nahi karti toh nayi banayein
+      wishlist = new Wishlist({ user: userId, products: [productId] });
+    } else {
+      // Check karein ke product pehle se array mein hai ya nahi
+      const index = wishlist.products.indexOf(productId);
+
+      if (index > -1) {
+        // Agar hai toh nikaal dein
+        wishlist.products.splice(index, 1);
+      } else {
+        // Agar nahi hai toh add karein
+        wishlist.products.push(productId);
+      }
+    }
+
+    await wishlist.save();
+    res.status(200).json({ 
+      message: "Wishlist updated", 
+      count: wishlist.products.length,
+      wishlist: wishlist.products 
+    });
+  } catch (error) {
+    console.error("Wishlist Toggle Error:", error);
+    res.status(500).json({ message: "Server error while updating wishlist" });
   }
 };
 
