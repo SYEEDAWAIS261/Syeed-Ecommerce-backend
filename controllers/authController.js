@@ -309,6 +309,7 @@ exports.getProfile = async (req, res) => {
       username: user.username,
       email: user.email,
       isAdmin: user.isAdmin,
+      isVerified: user.isVerified,
       profileImage: user.profileImage ? `/uploads/profile/${user.profileImage}` : '',
     });
   } catch (err) {
